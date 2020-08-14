@@ -3,6 +3,16 @@ const MysqlJs = (req, isDebug = true) => {
   const debug = isDebug ? console.log : () => {};
 
   /**
+   * Escape a string
+   * @param {string} - sql to escape
+   * @return {string} - escaped sql
+   */
+  const escape = (sql) => {
+    return conns.escape(sql);
+  };
+
+  
+  /**
    * Finds rows from a table matching condition. If no limit is
    * provided (or 0) then all rows matching condition are returned.
    *
@@ -24,7 +34,7 @@ const MysqlJs = (req, isDebug = true) => {
         resolve(results);
       });
     });
-  }
+  };
 
   /**
    * Finds one row in table matching condition. Same as find 
@@ -43,7 +53,7 @@ const MysqlJs = (req, isDebug = true) => {
         })
         .catch((err) => reject(err))
     });
-  }
+  };
 
   /**
    * Arbitrary query with any number of params, where params is
@@ -54,29 +64,44 @@ const MysqlJs = (req, isDebug = true) => {
    *
    * @param {string} sql - custom sql query
    * @param {object} params - params used in sql query
+   * @param {number} offset - offset
+   * @param {number} limit - limit
+   * @param {boolean} isDebug - is debug enable for this query
    * @return {array} - array of row objects if select
    */
-  const query = (sql, params = {}, offset = 0, limit = 0) => {
+  const query = (sql, params = {}, offset = 0, limit = false, isDebug = true) => {
     return new Promise((resolve, reject) => {
       let sqlWithParams = sql;
       const fields = Object.keys(params);
       if(fields.length > 0) {
         for(const field of fields) {
-          sqlWithParams = sqlWithParams.replace('$' + field, conns.escape(params[field]));
+          const regex = new RegExp('\\$' + field, 'g');
+          sqlWithParams = sqlWithParams.replace(regex, conns.escape(params[field]));
         }
       }
 
-      if(limit > 0) {
+      if(limit !== false) {
         sqlWithParams += ` limit ${parseInt(offset)}, ${parseInt(limit)}`;
       }
 
-      debug('- query: ', sqlWithParams);
+      if(isDebug) {
+        debug('- query: ', sqlWithParams);
+      }
+      
       conns.query(sqlWithParams, function (error, results, fields) {
         if (error) reject(error);
         resolve(results);
       });
     });
-  }
+  };
+
+  const queryOne = (sql, params, isDebug = true) => {
+    return new Promise((resolve, reject) => {
+      query(sql, params, 0, false, isDebug)
+        .then((results) => resolve(results[0]))
+        .catch((err) => reject(err));
+    });
+  };
 
   /**
    * Insert one record into a table with data
@@ -85,10 +110,10 @@ const MysqlJs = (req, isDebug = true) => {
    * @param {object} data - data to insert where keys are columns
    */
   const insertOne = (table, data) => {
-    if(!data) {
-      reject(new Error('invalid insert data'))
-    }
     return new Promise((resolve, reject) => {
+      if(!data) {
+        reject(new Error('invalid insert data'))
+      }
       const fields = Object.keys(data).map(key => '`' + key +'`').join(', ');
       const values = Object.values(data).map(val => conns.escape(val)).join(', ');
       const sql = `insert ignore into ${table} (${fields}) values (${values})`;
@@ -99,7 +124,7 @@ const MysqlJs = (req, isDebug = true) => {
         resolve(affected);
       });
     });
-  }
+  };
 
   /**
    * Update one record using conditions and data.
@@ -131,7 +156,7 @@ const MysqlJs = (req, isDebug = true) => {
         resolve(changed);
       });
     });
-  }
+  };
 
   /**
    * Same as updateMany but only updates one record
@@ -139,7 +164,7 @@ const MysqlJs = (req, isDebug = true) => {
    */
   const updateOne = (table, conditions, data) => {
     return updateMany(table, conditions, data, 1);
-  }
+  };
 
   /**
    * Delete one record from a table with conditions
@@ -155,7 +180,7 @@ const MysqlJs = (req, isDebug = true) => {
       }
       const conditionFields = Object.keys(conditions);
       const whereSql = conditionFields.map(field => '`' + field + '` = ' + conns.escape(conditions[field])).join(' AND ');
-      const limitSql = !limit ? `limit ${parseInt(limit)}` : '';
+      const limitSql = limit ? `limit ${parseInt(limit)}` : '';
       const sql = `delete from ${table} where ${whereSql} ${limitSql}`;
       debug('- delete sql:', sql);
       conns.query(sql, function (error, result, fields) {
@@ -164,7 +189,7 @@ const MysqlJs = (req, isDebug = true) => {
         resolve(affected);
       });
     });
-  }
+  };
 
   /**
    * Same as deleteMany but deletes one record only
@@ -172,7 +197,7 @@ const MysqlJs = (req, isDebug = true) => {
    */
   const deleteOne = (table, conditions) => {
     return deleteMany(table, conditions, 1);
-  }
+  };
 
 
   return {
